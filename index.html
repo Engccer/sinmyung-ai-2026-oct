@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수행평가에 바이브 코딩 쓰기</title>
+<!--
+  강연 슬라이드덱 템플릿
+
+  엔진은 260523 기조강연 덱에서 왔고(fragment·오디오 3계층·스와이프·포커스 이동),
+  260806·260807에서 고친 것을 얹었다(문서 모드, 외부 폰트 제거, 내레이션 지연,
+  효과음 볼륨 복구). 근거는 lecture-deck 스킬의 SKILL.md에 있다.
+
+  쓰는 법
+    1. 이 파일을 덱 폴더에 index.html로 복사한다
+    2. <title>과 표지를 채우고, 아래 데모 슬라이드를 지운 뒤 내용을 넣는다
+    3. sfx/page-turn.mp3에 스킬의 assets/page-turn.mp3를 복사한다
+    4. .deck-check.json을 만들고 검증을 돌린다
+
+  손대지 말아야 할 것
+    - 효과음·내레이션 볼륨을 코드에서 낮추지 않는다. 스크린 리더 음성에 묻힌다
+    - NARR_DELAY를 0으로 만들지 않는다. 제목 낭독과 정면으로 겹친다
+    - 미등장 fragment의 visibility:hidden을 opacity:0으로 바꾸지 않는다.
+      DOM에 살아 있어 Tab이 잡고 스크린 리더가 미리 읽는다
+-->
+<style>
+:root{
+  /* Bright Inclusive Studio · 라이트 페이퍼 (260523 PR #2) */
+  --paper:     #F7F4ED;
+  --paper-2:   #FFFEFA;
+  --paper-3:   #EFEADC;
+  --ink:       #172033;
+  --ink-soft:  #495369;
+  --ink-mute:  #7E879A;
+  --blue:      #5E8CFF;
+  --blue-soft: #E5EBFF;
+  --green:     #36B37E;
+  --green-soft:#E2F4EB;
+  --coral:     #FF7A6B;
+  --coral-soft:#FFE6E2;
+  --sand-soft: #F0E6D0;
+  --rule:        rgba(23,32,51,0.10);
+  --rule-strong: rgba(23,32,51,0.22);
+  --focus:     #FF7A6B;
+
+  /* 행사장 네트워크가 막혀도 글꼴이 바뀌지 않도록 시스템 폰트만 쓴다 */
+  --sans: "Pretendard", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", sans-serif;
+  --serif: "Noto Serif KR", "Batang", serif;
+
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow-card: 0 24px 50px rgba(23,32,51,0.08), 0 4px 14px rgba(23,32,51,0.04);
+  --shadow-soft: 0 12px 30px rgba(23,32,51,0.06);
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--sans);
+  line-height:1.65;
+  word-break:keep-all;
+  overflow-wrap:break-word;
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+
+.sr-only{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
+
+:focus-visible{outline:4px solid var(--focus);outline-offset:3px;}
+
+/* ── 상단 도구 ────────────────────────────────────────────────── */
+.deckbar{
+  position:fixed;top:0;left:0;right:0;z-index:20;
+  display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;
+  padding:.6rem 1rem;
+  background:var(--paper-2);
+  border-bottom:1px solid var(--rule);
+}
+.deckbar button,.decknav button{
+  font:inherit;
+  font-size:clamp(14px,1.7vmin,18px);
+  color:var(--ink);
+  background:var(--paper-3);
+  border:2px solid var(--rule-strong);
+  border-radius:10px;
+  padding:.5rem 1rem;
+  min-height:44px;
+  cursor:pointer;
+}
+.deckbar button:hover,.decknav button:hover{background:var(--sand-soft);}
+.deckbar button[disabled],.decknav button[disabled]{opacity:.45;cursor:default;}
+
+/* ── 슬라이드 ─────────────────────────────────────────────────── */
+.slide-container{
+  position:absolute;top:60px;bottom:64px;left:0;right:0;
+  touch-action:pan-y;
+}
+.slide{
+  display:none;
+  height:100%;
+  overflow-y:auto;
+  max-width:1180px;
+  margin:0 auto;
+  padding:4vh 5vw 6vh;
+}
+.slide.active{display:block;}
+
+.slide .eyebrow{
+  font-size:clamp(14px,1.8vmin,19px);
+  letter-spacing:.02em;
+  color:var(--ink-mute);
+  margin-bottom:.6rem;
+}
+.deck-h1{
+  font-size:clamp(30px,5.4vmin,62px);
+  line-height:1.22;
+  margin:0 0 1.2rem;
+  letter-spacing:-.01em;
+}
+.deck-h2{
+  font-size:clamp(26px,4.4vmin,54px);
+  line-height:1.28;
+  margin:0 0 1.3rem;
+  letter-spacing:-.01em;
+}
+.slide h3{
+  font-size:clamp(19px,2.8vmin,30px);
+  margin:1.8rem 0 .6rem;
+  color:var(--ink-soft);
+}
+/* 이 규칙은 특이도가 (0,1,1)이라 한 클래스로 쓴 <p> 규칙을 전부 이긴다.
+   그래서 슬라이드 안 조판 클래스(.eyebrow, .byline, .big-quote, .huge-q,
+   .card-num)는 .slide 접두사를 달고 있다. 접두사를 떼면 마지막 문장이 본문
+   크기로 줄어든다. 새 클래스를 더할 때도 <p>에 붙일 것이면 접두사를 붙인다
+   (260814 덱 실측: .huge-q가 41px 대신 21px, 차트 막대가 58px 대신 109px). */
+.slide p,.slide li{
+  font-size:clamp(18px,2.7vmin,30px);
+  margin:.5rem 0;
+}
+.slide ul,.slide ol{margin:.8rem 0 1.3rem;padding-left:1.5em;}
+.slide li{margin-bottom:.7rem;}
+.slide .byline{color:var(--ink-soft);font-size:clamp(16px,2.2vmin,24px);}
+
+/* 임팩트 키워드는 코랄, 문장 단위 결론 강조는 초록 형광펜.
+   <b>는 쓰지 않는다. 시맨틱 의미가 없고 스크린 리더 인지도 약하다. */
+em{font-style:normal;color:var(--coral);font-weight:700;}
+strong{font-weight:700;background:linear-gradient(transparent 58%, var(--green-soft) 58%);}
+
+/* 그 장의 결론 한 줄. manuscript 계보에서 장마다 하나 둔다.
+   `fragment`를 함께 걸어 그 장의 마지막 조각으로 둔다. 처음부터 떠 있으면 결론이
+   근거보다 먼저 노출돼 순차 진행이 무너지고, 화면 낭독기 사용자에게는 마지막
+   누름이 결론에 닿지 않고 곧바로 다음 장으로 넘어가 버린다. */
+.point{
+  color:var(--ink);
+  font-weight:700;
+  border-left:6px solid var(--coral);
+  background:var(--coral-soft);
+  padding:.8rem 1rem;
+  border-radius:0 10px 10px 0;
+  margin:1.4rem 0 0;
+}
+
+.slide .big-quote{
+  font-family:var(--serif);
+  font-size:clamp(24px,4vmin,46px);
+  line-height:1.45;
+  padding:1.2rem 0 1.2rem 1.4rem;
+  border-left:8px solid var(--blue);
+}
+.slide .huge-q{
+  font-size:clamp(30px,6vmin,72px);
+  line-height:1.25;
+  font-weight:700;
+  text-align:center;
+  padding:6vh 0;
+}
+
+/* 카드 줄. 읽히는 순서가 곧 말하는 순서가 되도록 좁은 화면에서 세로로 쌓인다. */
+.cards{display:flex;gap:1rem;flex-wrap:wrap;margin:1.2rem 0;}
+.card{
+  flex:1 1 260px;
+  background:var(--paper-2);
+  border:1px solid var(--rule);
+  border-radius:14px;
+  padding:1.1rem 1.2rem;
+  box-shadow:var(--shadow-soft);
+}
+.slide .card-num{
+  font-size:clamp(13px,1.7vmin,17px);
+  color:var(--ink-mute);
+  margin-bottom:.3rem;
+}
+.card h3{margin:0 0 .4rem;color:var(--ink);font-size:clamp(19px,2.6vmin,28px);}
+.card.accent-blue{border-top:6px solid var(--blue);}
+.card.accent-green{border-top:6px solid var(--green);}
+.card.accent-coral{border-top:6px solid var(--coral);}
+
+/* 칩은 <ul class="chips">와 <li class="chip">로 쓰고 한 줄에 하나씩 세운다.
+   가로로 늘어놓으면 두세 개가 같은 시각 행에 묶이는데, 스크린 리더 브라우즈 모드는
+   시각 행 단위로 읽어서 여러 항목을 한 번에 몰아 읽는다(260814 덱 실측: 칩 4개가
+   2행, 6개가 2행). <ul role="list">는 붙이지 않는다. 네이티브 시맨틱과 겹친다. */
+.slide ul.chips{
+  list-style:none;
+  display:flex;flex-direction:column;align-items:flex-start;
+  gap:.5rem;margin:.9rem 0 1.2rem;padding-left:0;
+}
+.slide .chips .chip{
+  font-size:clamp(15px,2vmin,22px);
+  background:var(--blue-soft);
+  border-radius:999px;
+  padding:.35rem .9rem;
+  margin:0;
+}
+
+.warn-box{
+  background:var(--coral-soft);
+  border:2px solid var(--coral);
+  border-radius:14px;
+  padding:1.2rem 1.3rem;
+  margin:1.2rem 0;
+}
+
+.mark{
+  background:var(--paper-3);
+  border:1px solid var(--rule);
+  border-left:8px solid var(--blue);
+  border-radius:12px;
+  padding:1rem 1.2rem;
+  margin:1.1rem 0 1.3rem;
+}
+.mark p{margin:.35rem 0;}
+
+a{color:#2f6ae0;}
+.slide table.cases{width:100%;border-collapse:collapse;margin:1rem 0;}
+.slide .cases th,.slide .cases td{font-size:clamp(17px,2.4vmin,27px);text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--rule-strong);vertical-align:top;}
+.slide .cases th{color:var(--ink-soft);background:var(--paper-3);}
+.slide .link{margin-top:1.4rem;}
+
+
+/* ── 단계별 등장 ──────────────────────────────────────────────
+   visibility까지 숨기는 것이 핵심이다. opacity만 0으로 두면 DOM에 살아 있어
+   Tab이 등장 전 링크를 잡고 스크린 리더가 미리 읽는다(260523 커밋 1ba9560). */
+.fragment{opacity:0;transform:translateY(14px);visibility:hidden;}
+.fragment.frag-visible{
+  opacity:1;transform:none;visibility:visible;
+  animation:frag-in .55s var(--ease-soft);
+}
+@keyframes frag-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.card.fragment{transform:translateY(18px) scale(.985);}
+.card.frag-visible{transform:none;}
+
+/* ── 진행 표시·하단 이동 ──────────────────────────────────────── */
+.progress-track{
+  position:fixed;top:0;left:0;right:0;height:3px;z-index:30;
+  background:transparent;
+}
+.progress{height:100%;width:0;background:var(--blue);transition:width .3s var(--ease-soft);}
+
+.decknav{
+  position:fixed;left:0;right:0;bottom:0;z-index:20;
+  display:flex;align-items:center;justify-content:center;gap:1rem;
+  padding:.6rem 1rem;
+  background:var(--paper-2);
+  border-top:1px solid var(--rule);
+}
+.counter{color:var(--ink-mute);font-size:clamp(14px,1.7vmin,18px);}
+
+/* ── 문서 모드 ────────────────────────────────────────────────
+   같은 DOM을 CSS로만 펼친다. 내용을 두 벌로 만들지 않는다. */
+body.doc{overflow:auto;}
+/* 상단 도구는 fixed로 떠 있다. 문서 모드에서는 문서가 그 아래에서 시작해야
+   첫 슬라이드의 제목이 가리지 않는다. */
+body.doc .slide-container{position:static;padding-top:64px;}
+body.doc .slide{
+  display:block;
+  height:auto;
+  overflow:visible;
+  padding:2.5rem 5vw;
+  border-bottom:1px solid var(--rule);
+}
+body.doc .fragment{opacity:1;transform:none;visibility:visible;animation:none;}
+body.doc .decknav,body.doc .progress-track{display:none;}
+
+/* ── 반응형 ───────────────────────────────────────────────────
+   터치 타깃 44px는 좁은 화면에서도 유지한다. */
+@media (max-width:700px){
+  .slide{padding:3vh 6vw 5vh;}
+  .cards{flex-direction:column;}
+}
+@media (max-width:480px){
+  .deckbar{gap:.4rem;padding:.5rem .6rem;}
+  .deckbar button,.decknav button{padding:.5rem .7rem;min-height:44px;}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important;}
+  .fragment{transform:none;}
+}
+</style>
+</head>
+<body>
+
+<div class="progress-track"><div class="progress" id="progress"></div></div>
+
+<div class="deckbar">
+  <button type="button" id="modeBtn">문서 모드로 보기</button>
+  <button type="button" id="sfxBtn">효과음 켬</button>
+</div>
+
+<!-- 랜드마크를 두지 않는다. 한 화면에 슬라이드 한 장뿐이고 컨트롤은 다섯 개라
+     건너뛸 반복 블록이 없다(WCAG 2.4.1 미성립). main을 두면 장을 넘길 때마다
+     포커스가 그 안으로 들어가 "main 시작"이, 끝까지 읽으면 "main 끝"이 장 수만큼
+     반복된다. 얻는 것 없이 통지만 두 배가 된다. -->
+<div class="slide-container" id="deck">
+
+<!-- 1 · 표지 -->
+<div class="slide">
+  <h1 class="deck-h1">수행평가에 바이브 코딩 쓰기</h1>
+  <p class="byline">1학년·3학년 영어 수행평가 사례 네 가지</p>
+  <p class="byline">2026 AI 바이브 교원공동체 10월 모임 · 김헌용</p>
+</div>
+
+<!-- 2 · 네 가지 사례 -->
+<div class="slide">
+  <h2 class="deck-h2">네 가지 사례</h2>
+  <table class="cases">
+    <thead>
+      <tr><th scope="col">학년</th><th scope="col">평가</th><th scope="col">도구</th><th scope="col">맡은 일</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1학년</td><td>자기소개 인터뷰 (말하기)</td><td>웹앱</td><td>질문 제시·시간 재기</td></tr>
+      <tr><td>1학년</td><td>우리동네 생태 보고서 (쓰기)</td><td>Google Classroom 자동화</td><td>원고 수거·맞춤형 피드백</td></tr>
+      <tr><td>3학년</td><td>듣기</td><td>웹앱</td><td>사전 연습</td></tr>
+      <tr><td>3학년</td><td>말하기 포트폴리오</td><td>웹앱</td><td>녹음·제출·채점</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 3 · 1학년 자기소개 인터뷰 앱 -->
+<div class="slide">
+  <p class="eyebrow">사례 1 · 1학년 말하기</p>
+  <h2 class="deck-h2">1학년 자기소개 인터뷰 앱</h2>
+  <ul>
+    <li>교사와 1:1 인터뷰 진행 화면</li>
+    <li>무작위 질문, 원어민 음성, 타이머</li>
+  </ul>
+  <p class="link"><a href="https://engccer.github.io/interview-2026/" target="_blank" rel="noopener">인터뷰 앱, engccer.github.io/interview-2026</a></p>
+</div>
+
+<!-- 4 · 1학년 생태 보고서 -->
+<div class="slide">
+  <p class="eyebrow">사례 2 · 1학년 쓰기</p>
+  <h2 class="deck-h2">1학년 생태 보고서: 맞춤형 피드백</h2>
+  <ul>
+    <li>차시마다 학생 원고 일괄 수거</li>
+    <li>학생별 맞춤형 피드백을 학생 구글 문서에 자동 기입</li>
+  </ul>
+  <div class="mark">
+    <p>예시: My Plan의 I plan to plogging을 I plan to go plogging으로 바꾸기</p>
+  </div>
+  <p class="link"><a href="https://classroom.google.com/c/ODQ4NzAwMzY3NDky/a/ODI2MjQ1NDIwMjMw/details" target="_blank" rel="noopener">교학공 클래스룸 테스트 과제, classroom.google.com</a></p>
+</div>
+
+<!-- 5 · 3학년 듣기 연습 페이지 -->
+<div class="slide">
+  <p class="eyebrow">사례 3 · 3학년 듣기</p>
+  <h2 class="deck-h2">3학년 듣기 연습 페이지</h2>
+  <ul>
+    <li>평가 전 혼자 듣는 교과서 대화 15편</li>
+    <li>대본, 속도 조절, 재생 중인 대사 표시</li>
+  </ul>
+  <p class="link"><a href="https://sinmyung-listening-practice.engccer.chatgpt.site" target="_blank" rel="noopener">듣기 연습, sinmyung-listening-practice.engccer.chatgpt.site</a></p>
+</div>
+
+<!-- 6 · 3학년 말하기 포트폴리오 -->
+<div class="slide">
+  <p class="eyebrow">사례 4 · 3학년 말하기</p>
+  <h2 class="deck-h2">3학년 말하기 포트폴리오</h2>
+  <ul>
+    <li>크롬북으로 반 전체 동시 녹음·제출</li>
+    <li>전사 후 핵심 표현 기준 자동 채점</li>
+  </ul>
+  <p class="link"><a href="https://engccer.github.io/speaking-portfolio/" target="_blank" rel="noopener">말하기 포트폴리오, engccer.github.io/speaking-portfolio</a></p>
+</div>
+
+<!-- 7 · 만들면서 정한 원칙 -->
+<div class="slide">
+  <h2 class="deck-h2">만들면서 정한 원칙</h2>
+  <ul>
+    <li>최종 판정은 교사</li>
+    <li>연습 기록과 평가 점수 분리</li>
+    <li>학생 이름·녹음은 공개 저장소 밖</li>
+  </ul>
+</div>
+
+<!-- 8 · 수업 나눔 -->
+<div class="slide">
+  <h2 class="deck-h2">수업 나눔</h2>
+  <ul>
+    <li>선생님 수행평가에서 매번 반복되는 일</li>
+    <li>AI에게 맡길 부분과 교사가 맡을 부분</li>
+  </ul>
+</div>
+
+</div>
+
+<div class="decknav">
+  <button type="button" id="prevBtn">이전</button>
+  <span class="counter" id="counter"></span>
+  <button type="button" id="nextBtn">다음</button>
+</div>
+
+<p id="status" class="sr-only" aria-live="polite"></p>
+
+<script>
+'use strict';
+(function(){
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var TOTAL = slides.length;
+  var cur = -1;
+  var fragIndex = 0;
+  var sfxOn = true, docMode = false;
+
+  var modeBtn = document.getElementById('modeBtn');
+  var sfxBtn  = document.getElementById('sfxBtn');
+  var prevBtn = document.getElementById('prevBtn');
+  var nextBtn = document.getElementById('nextBtn');
+  var counter = document.getElementById('counter');
+  var progress = document.getElementById('progress');
+  var status  = document.getElementById('status');
+  var stage   = document.getElementById('deck');
+
+  function announce(msg){
+    status.textContent = '';
+    setTimeout(function(){ status.textContent = msg; }, 60);
+  }
+
+  /* ── 오디오 ───────────────────────────────────────────────
+     세 갈래를 청각적으로 구분한다. 연출이 아니라 시각장애 발표자가 진행 상태를
+     귀로 알기 위한 장치다. 항목이 하나 더 나온 것(tick)과 다음 장으로 넘어간
+     것(page-turn)을 소리로 가른다. 볼륨을 여기서 낮추지 않는다. */
+  var ctx = null;
+  var turn = null;
+  try{
+    turn = new Audio('sfx/page-turn.mp3');
+    turn.preload = 'auto';
+    turn.volume = 1;
+    turn.load();
+  }catch(e){ turn = null; }
+
+  function getCtx(){
+    if (ctx) return ctx;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try{ ctx = new AC(); }catch(e){ ctx = null; }
+    return ctx;
+  }
+
+  /* 정지된 AudioContext에 오실레이터를 예약하면 소리가 사라진다. resume 뒤에 건다. */
+  function beep(freqFrom, freqTo, peak, dur){
+    var c = getCtx();
+    if (!c) return;
+    var fire = function(){
+      try{
+        var osc = c.createOscillator(), g = c.createGain();
+        var t = c.currentTime;
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freqFrom, t);
+        if (freqTo !== freqFrom) osc.frequency.exponentialRampToValueAtTime(freqTo, t + dur * 0.85);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(peak, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        osc.connect(g); g.connect(c.destination);
+        osc.start(t); osc.stop(t + dur + 0.02);
+      }catch(e){}
+    };
+    if (c.state === 'suspended') c.resume().then(fire, function(){});
+    else fire();
+  }
+
+  function playTick(){ if (sfxOn) beep(880, 880, 0.10, 0.12); }        // 항목 등장
+  function playTurnTone(){ if (sfxOn) beep(440, 240, 0.13, 0.30); }    // 장 전환 폴백
+
+  function playSfx(){
+    if (!sfxOn) return;
+    if (turn && turn.readyState >= 2){
+      try{
+        turn.currentTime = 0;
+        var p = turn.play();
+        if (p && p.catch) p.catch(playTurnTone);
+        return;
+      }catch(e){}
+    }
+    playTurnTone();
+  }
+
+  function unlockAudio(){
+    var c = getCtx();
+    if (c && c.state === 'suspended') c.resume();
+    document.removeEventListener('keydown', unlockAudio, true);
+    document.removeEventListener('pointerdown', unlockAudio, true);
+  }
+  document.addEventListener('keydown', unlockAudio, true);
+  document.addEventListener('pointerdown', unlockAudio, true);
+
+  /* ── 단계별 등장 ──────────────────────────────────────────── */
+  function fragsOf(s){ return s.querySelectorAll('.fragment'); }
+
+  function setFragsVisible(s, count){
+    var f = fragsOf(s);
+    for (var i = 0; i < f.length; i++){
+      if (i < count) f[i].classList.add('frag-visible');
+      else f[i].classList.remove('frag-visible');
+    }
+  }
+
+  /* 등장한 항목으로 포커스를 옮겨 스크린 리더가 그것을 읽게 한다. 다만 링크·버튼에는
+     tabindex를 주지 않는다. 주면 자연 탭 순서에서 빠진다(260523 커밋 1ba9560). */
+  function onRevealed(el){
+    if (!el) return;
+    var tag = el.tagName;
+    var focusable = (tag === 'A' && el.hasAttribute('href')) || tag === 'BUTTON' ||
+                    el.getAttribute('tabindex') !== null;
+    if (!focusable) el.setAttribute('tabindex', '-1');
+    try{ el.focus({preventScroll:true}); }catch(e){}
+  }
+
+  /* ── 이동 ─────────────────────────────────────────────────── */
+  function updateNav(){
+    if (docMode) return;
+    var n = fragsOf(slides[cur]).length;
+    prevBtn.disabled = (cur === 0 && fragIndex === 0);
+    nextBtn.disabled = (cur === TOTAL - 1 && fragIndex >= n);
+  }
+
+  function go(n, opts){
+    if (n < 0 || n >= TOTAL || n === cur) return;
+    opts = opts || {};
+    if (cur >= 0) slides[cur].classList.remove('active');
+
+    cur = n;
+    var s = slides[cur];
+    s.classList.add('active');
+
+    var count = fragsOf(s).length;
+    if (opts.revealAll){ setFragsVisible(s, count); fragIndex = count; }
+    else { setFragsVisible(s, 0); fragIndex = 0; }
+
+    counter.textContent = (cur + 1) + ' / ' + TOTAL;
+    progress.style.width = ((cur + 1) / TOTAL * 100) + '%';
+    s.scrollTop = 0;
+
+    playSfx();
+
+    /* 제목이 없는 시각 슬라이드도 포커스가 갈 곳이 있어야 한다. */
+    /* 그 장의 첫 요소로 옮긴다. 제목만 잡으면 그 위에 있는 눈썹줄(날짜·장소·번호)이
+       앞으로 읽어 나가는 흐름에서 통째로 빠진다(260814 덱에서 46장 중 23장). 슬라이드는
+       눈썹줄이나 제목으로 시작하므로 첫 요소가 곧 그 장의 첫 줄이다. 제목보다 앞에
+       무언가를 두려면 그것이 첫 줄로 읽혀도 되는 내용이어야 한다. */
+    var target = s.firstElementChild || s;
+    target.setAttribute('tabindex', '-1');
+    try{ target.focus({preventScroll:true}); }catch(e){}
+
+    updateNav();
+  }
+
+  function advance(){
+    if (docMode) return;
+    var s = slides[cur];
+    var f = fragsOf(s);
+    if (fragIndex < f.length){
+      f[fragIndex].classList.add('frag-visible');
+      fragIndex++;
+      playTick();
+      onRevealed(f[fragIndex - 1]);
+      updateNav();
+    } else {
+      go(cur + 1);
+    }
+  }
+
+  function retreat(){
+    if (docMode) return;
+    if (fragIndex > 0){
+      fragIndex--;
+      fragsOf(slides[cur])[fragIndex].classList.remove('frag-visible');
+      updateNav();
+    } else {
+      go(cur - 1, {revealAll:true});
+    }
+  }
+
+  prevBtn.addEventListener('click', retreat);
+  nextBtn.addEventListener('click', advance);
+
+  document.addEventListener('keydown', function(e){
+    if (docMode) return;
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    if (t && (t.tagName === 'BUTTON' || t.tagName === 'A') &&
+        (e.key === 'Enter' || e.key === ' ')) return;
+    switch(e.key){
+      case 'ArrowRight': case 'PageDown': e.preventDefault(); advance(); break;
+      case 'ArrowLeft': case 'PageUp': case 'Backspace': e.preventDefault(); retreat(); break;
+      case 'Home': e.preventDefault(); go(0); break;
+      case 'End': e.preventDefault(); go(TOTAL - 1, {revealAll:true}); break;
+    }
+  });
+
+  /* 좌우 스와이프. 세로 스크롤은 살려 두고, 링크·버튼 위에서는 넘기지 않는다. */
+  var sx = 0, sy = 0, st = 0;
+  stage.addEventListener('touchstart', function(e){
+    if (e.touches.length !== 1) return;
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
+  }, {passive:true});
+  stage.addEventListener('touchend', function(e){
+    if (docMode || e.changedTouches.length !== 1) return;
+    var dx = e.changedTouches[0].clientX - sx;
+    var dy = e.changedTouches[0].clientY - sy;
+    if (Date.now() - st > 800 || Math.abs(dx) < 60 || Math.abs(dy) > 80) return;
+    var tag = (e.target && e.target.tagName) || '';
+    if (tag === 'A' || tag === 'BUTTON') return;
+    if (dx < 0) advance(); else retreat();
+  }, {passive:true});
+
+  /* ── 문서 모드 ────────────────────────────────────────────── */
+  function setMode(on, opts){
+    docMode = on;
+    document.body.classList.toggle('doc', on);
+    modeBtn.textContent = on ? '발표 모드로 보기' : '문서 모드로 보기';
+    try{ localStorage.setItem('deckDocMode', on ? '1' : '0'); }catch(e){}
+    if (on){
+      for (var i = 0; i < TOTAL; i++) setFragsVisible(slides[i], fragsOf(slides[i]).length);
+    } else {
+      var keep = cur;
+      cur = -1;
+      go(keep < 0 ? 0 : keep, {revealAll:true});
+    }
+    if (opts && opts.announce){
+      announce(on ? '문서 모드입니다. 전체가 한 페이지로 펼쳐졌습니다.'
+                  : '발표 모드입니다. 이전과 다음 버튼으로 넘깁니다.');
+    }
+  }
+  modeBtn.addEventListener('click', function(){ setMode(!docMode, {announce:true}); });
+
+  sfxBtn.addEventListener('click', function(){
+    sfxOn = !sfxOn;
+    this.textContent = sfxOn ? '효과음 켬' : '효과음 끔';
+    try{ localStorage.setItem('deckSfx', sfxOn ? '1' : '0'); }catch(e){}
+    if (sfxOn) playSfx();
+  });
+
+  /* ── 시작 ─────────────────────────────────────────────────── */
+  try{
+    if (localStorage.getItem('deckSfx') === '0'){
+      sfxOn = false; sfxBtn.textContent = '효과음 끔';
+    }
+  }catch(e){}
+
+  go(0);
+  try{
+    if (localStorage.getItem('deckDocMode') === '1') setMode(true);
+  }catch(e){}
+})();
+</script>
+
+</body>
+</html>
